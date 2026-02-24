@@ -1,0 +1,15 @@
+name: excaliber
+version: 0.1.0
+description: Sword-swift posting of pretty tweets to X
+
+install: pip install -e .
+command: python -m excaliber_mcp.server
+
+environment:
+  X_API_KEY: ${X_API_KEY}
+  X_API_SECRET: ${X_API_SECRET}
+  X_ACCESS_TOKEN: ${X_ACCESS_TOKEN}
+  X_ACCESS_TOKEN_SECRET: ${X_ACCESS_TOKEN_SECRET}
+
+runtime:
+  python: "3.12"
