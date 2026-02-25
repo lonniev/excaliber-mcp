@@ -1,4 +1,4 @@
-"""Multi-tenant credential vault for eXcaliber-mcp.
+"""Multi-tenant credential vault for eXcalibur-mcp.
 
 Mirrors thebrain-mcp's vault pattern: PBKDF2 key derivation + Fernet
 symmetric encryption. Each user's X API OAuth credentials are encrypted

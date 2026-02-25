@@ -1,4 +1,4 @@
-"""eXcaliber-mcp settings loaded from environment variables."""
+"""eXcalibur-mcp settings loaded from environment variables."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """eXcaliber MCP server settings."""
+    """eXcalibur MCP server settings."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -45,4 +45,4 @@ class Settings(BaseSettings):
     tollbooth_ots_calendars: str | None = None  # Comma-separated URLs
 
     # Credential vault location
-    excaliber_vault_dir: str | None = None
+    excalibur_vault_dir: str | None = None

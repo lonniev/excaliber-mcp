@@ -2,7 +2,7 @@
 
 import pytest
 
-from excaliber_mcp.formatter import (
+from excalibur_mcp.formatter import (
     markdown_to_unicode,
     to_bold,
     to_bold_italic,

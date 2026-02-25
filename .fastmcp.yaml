@@ -1,9 +1,9 @@
-name: excaliber
+name: excalibur
 version: 0.1.0
 description: Sword-swift posting of pretty tweets to X
 
 install: pip install -e .
-command: python -m excaliber_mcp.server
+command: python -m excalibur_mcp.server
 
 environment:
   X_API_KEY: ${X_API_KEY}

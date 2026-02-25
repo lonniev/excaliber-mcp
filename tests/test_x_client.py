@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from excaliber_mcp.x_client import (
+from excalibur_mcp.x_client import (
     TweetTooLongError,
     XAPIError,
     XClient,
@@ -105,7 +105,7 @@ class TestTweetLength:
         text = "x" * TWEET_MAX_LENGTH
         mock_resp = _mock_response(201, {"data": {"id": "123", "text": text}})
 
-        with patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
+        with patch("excalibur_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -128,7 +128,7 @@ class TestPostTweet:
             "data": {"id": "1234567890", "text": "Hello world"}
         })
 
-        with patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
+        with patch("excalibur_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -145,7 +145,7 @@ class TestPostTweet:
     async def test_rate_limit_429(self, client):
         mock_resp = _mock_response(429, {"detail": "Too Many Requests"})
 
-        with patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
+        with patch("excalibur_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -160,7 +160,7 @@ class TestPostTweet:
     async def test_auth_error_401(self, client):
         mock_resp = _mock_response(401, {"detail": "Unauthorized"})
 
-        with patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
+        with patch("excalibur_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -175,7 +175,7 @@ class TestPostTweet:
     async def test_forbidden_403(self, client):
         mock_resp = _mock_response(403, {"title": "Forbidden", "detail": "App-only"})
 
-        with patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
+        with patch("excalibur_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -190,7 +190,7 @@ class TestPostTweet:
     async def test_unexpected_status(self, client):
         mock_resp = _mock_response(500, {"error": "Internal Server Error"})
 
-        with patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
+        with patch("excalibur_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -206,7 +206,7 @@ class TestPostTweet:
         """Verify OAuth header is sent with the request."""
         mock_resp = _mock_response(201, {"data": {"id": "999", "text": "hi"}})
 
-        with patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
+        with patch("excalibur_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)

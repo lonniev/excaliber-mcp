@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from excaliber_mcp.vault import (
+from excalibur_mcp.vault import (
     CredentialNotFoundError,
     DecryptionError,
     FileVault,

@@ -1,4 +1,4 @@
-"""eXcaliber-mcp — FastMCP server for posting formatted content to X (Twitter).
+"""eXcalibur-mcp — FastMCP server for posting formatted content to X (Twitter).
 
 Tollbooth-monetized, DPYC-native. No code shared with thebrain-mcp.
 """
@@ -15,10 +15,10 @@ from tollbooth.constants import ToolTier
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("eXcaliber")
+mcp = FastMCP("eXcalibur")
 
-# Default vault directory (operator can override via EXCALIBER_VAULT_DIR)
-_DEFAULT_VAULT_DIR = os.path.join(os.path.expanduser("~"), ".excaliber", "vault")
+# Default vault directory (operator can override via EXCALIBUR_VAULT_DIR)
+_DEFAULT_VAULT_DIR = os.path.join(os.path.expanduser("~"), ".excalibur", "vault")
 
 # ---------------------------------------------------------------------------
 # Tool cost table
@@ -51,7 +51,7 @@ def get_settings():
     global _settings
     if _settings is not None:
         return _settings
-    from excaliber_mcp.config import Settings
+    from excalibur_mcp.config import Settings
 
     _settings = Settings()
     return _settings
@@ -93,7 +93,7 @@ def _get_effective_user_id() -> str:
     Returns "stdio:0" in STDIO mode for local dev.
     Raises ValueError if no DPYC session is active in cloud mode.
     """
-    from excaliber_mcp.vault import get_dpyc_npub
+    from excalibur_mcp.vault import get_dpyc_npub
 
     horizon_id = _get_current_user_id()
     if not horizon_id:
@@ -120,11 +120,11 @@ def _get_vault():
     global _vault_instance
     if _vault_instance is not None:
         return _vault_instance
-    from excaliber_mcp.vault import FileVault
+    from excalibur_mcp.vault import FileVault
 
     settings = get_settings()
-    vault_dir = settings.excaliber_vault_dir or os.environ.get(
-        "EXCALIBER_VAULT_DIR", _DEFAULT_VAULT_DIR
+    vault_dir = settings.excalibur_vault_dir or os.environ.get(
+        "EXCALIBUR_VAULT_DIR", _DEFAULT_VAULT_DIR
     )
     _vault_instance = FileVault(vault_dir)
     return _vault_instance
@@ -221,8 +221,8 @@ def _get_btcpay():
 
 def _get_x_credentials():
     """Get X API credentials: per-user session first, env vars as fallback."""
-    from excaliber_mcp.vault import get_session
-    from excaliber_mcp.x_client import XCredentials
+    from excalibur_mcp.vault import get_session
+    from excalibur_mcp.x_client import XCredentials
 
     user_id = _get_current_user_id()
     if user_id:
@@ -350,7 +350,7 @@ async def _seed_balance(npub: str) -> bool:
 async def health() -> dict:
     """Health check — returns service version and status. Free, no credits consumed."""
     return {
-        "service": "excaliber-mcp",
+        "service": "excalibur-mcp",
         "version": "0.3.0",
         "status": "ok",
     }
@@ -363,7 +363,7 @@ async def session_status() -> dict[str, Any]:
     Shows whether you have an active personal session or are using
     the operator's default credentials. Also shows DPYC identity state.
     """
-    from excaliber_mcp.vault import get_dpyc_npub, get_session
+    from excalibur_mcp.vault import get_dpyc_npub, get_session
 
     user_id = _get_current_user_id()
     if not user_id:
@@ -433,7 +433,7 @@ async def register_credentials(
         npub: Your Nostr public key in bech32 format (npub1...). Required for
             credit operations. Get one via the dpyc-oracle's how_to_join() tool.
     """
-    from excaliber_mcp.vault import encrypt_credentials, set_session
+    from excalibur_mcp.vault import encrypt_credentials, set_session
 
     if not npub.startswith("npub1") or len(npub) < 60:
         return {
@@ -490,7 +490,7 @@ async def activate_session(passphrase: str) -> dict[str, Any]:
     Args:
         passphrase: The passphrase you used when registering credentials
     """
-    from excaliber_mcp.vault import (
+    from excalibur_mcp.vault import (
         CredentialNotFoundError,
         DecryptionError,
         VaultNotConfiguredError,
@@ -686,8 +686,8 @@ async def post_tweet(text: str) -> dict:
     if gate is not None:
         return gate
 
-    from excaliber_mcp.formatter import markdown_to_unicode
-    from excaliber_mcp.x_client import TweetTooLongError, XAPIError, XClient
+    from excalibur_mcp.formatter import markdown_to_unicode
+    from excalibur_mcp.x_client import TweetTooLongError, XAPIError, XClient
 
     converted = markdown_to_unicode(text)
 
@@ -725,7 +725,7 @@ async def post_tweet(text: str) -> dict:
 
 
 def main() -> None:
-    """Entry point for the eXcaliber MCP server."""
+    """Entry point for the eXcalibur MCP server."""
     mcp.run()
 
 

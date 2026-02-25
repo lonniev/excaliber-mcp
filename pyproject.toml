@@ -1,8 +1,8 @@
 [project]
-name = "excaliber-mcp"
+name = "excalibur-mcp"
 version = "0.1.0"
 description = "FastMCP server for posting formatted content to X (Twitter) — Tollbooth-monetized, DPYC-native"
-authors = [{name = "eXcaliber MCP Contributors"}]
+authors = [{name = "eXcalibur MCP Contributors"}]
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.scripts]
-excaliber-mcp = "excaliber_mcp.server:main"
+excalibur-mcp = "excalibur_mcp.server:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
@@ -61,4 +61,4 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=excaliber_mcp --cov-report=term-missing"
+addopts = "-v --cov=excalibur_mcp --cov-report=term-missing"

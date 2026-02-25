@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from excaliber_mcp.vault import _sessions, _dpyc_sessions, clear_session
+from excalibur_mcp.vault import _sessions, _dpyc_sessions, clear_session
 
 _SAMPLE_NPUB = "npub1" + "a" * 58
 
@@ -17,7 +17,7 @@ def _clean_state():
     _sessions.clear()
     _dpyc_sessions.clear()
     # Reset vault singleton
-    import excaliber_mcp.server as srv
+    import excalibur_mcp.server as srv
     srv._vault_instance = None
     yield
     _sessions.clear()
@@ -29,13 +29,13 @@ def _clean_state():
 def vault_dir(tmp_path):
     """Set up a temporary vault directory."""
     d = str(tmp_path / "vault")
-    with patch.dict(os.environ, {"EXCALIBER_VAULT_DIR": d}):
+    with patch.dict(os.environ, {"EXCALIBUR_VAULT_DIR": d}):
         yield d
 
 
 def _mock_user_id(user_id: str):
     """Context manager to mock the Horizon user ID."""
-    return patch("excaliber_mcp.server._get_current_user_id", return_value=user_id)
+    return patch("excalibur_mcp.server._get_current_user_id", return_value=user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ def _mock_user_id(user_id: str):
 class TestRegisterCredentials:
     @pytest.mark.asyncio
     async def test_success(self, vault_dir):
-        from excaliber_mcp.server import register_credentials
+        from excalibur_mcp.server import register_credentials
 
         with _mock_user_id("user-42"):
             result = await register_credentials(
@@ -61,8 +61,8 @@ class TestRegisterCredentials:
 
     @pytest.mark.asyncio
     async def test_activates_session_immediately(self, vault_dir):
-        from excaliber_mcp.server import register_credentials
-        from excaliber_mcp.vault import get_session
+        from excalibur_mcp.server import register_credentials
+        from excalibur_mcp.vault import get_session
 
         with _mock_user_id("user-42"):
             await register_credentials(
@@ -77,7 +77,7 @@ class TestRegisterCredentials:
 
     @pytest.mark.asyncio
     async def test_invalid_npub_rejected(self, vault_dir):
-        from excaliber_mcp.server import register_credentials
+        from excalibur_mcp.server import register_credentials
 
         with _mock_user_id("user-1"):
             result = await register_credentials(
@@ -91,7 +91,7 @@ class TestRegisterCredentials:
 
     @pytest.mark.asyncio
     async def test_requires_cloud_mode(self):
-        from excaliber_mcp.server import register_credentials
+        from excalibur_mcp.server import register_credentials
 
         with _mock_user_id(None):
             result = await register_credentials(
@@ -112,7 +112,7 @@ class TestRegisterCredentials:
 class TestActivateSession:
     @pytest.mark.asyncio
     async def test_success(self, vault_dir):
-        from excaliber_mcp.server import activate_session, register_credentials
+        from excalibur_mcp.server import activate_session, register_credentials
 
         # First register
         with _mock_user_id("user-42"):
@@ -134,7 +134,7 @@ class TestActivateSession:
 
     @pytest.mark.asyncio
     async def test_wrong_passphrase(self, vault_dir):
-        from excaliber_mcp.server import activate_session, register_credentials
+        from excalibur_mcp.server import activate_session, register_credentials
 
         with _mock_user_id("user-42"):
             await register_credentials(
@@ -153,7 +153,7 @@ class TestActivateSession:
 
     @pytest.mark.asyncio
     async def test_no_credentials_stored(self, vault_dir):
-        from excaliber_mcp.server import activate_session
+        from excalibur_mcp.server import activate_session
 
         with _mock_user_id("nobody"):
             result = await activate_session(passphrase="anything")
@@ -163,7 +163,7 @@ class TestActivateSession:
 
     @pytest.mark.asyncio
     async def test_requires_cloud_mode(self):
-        from excaliber_mcp.server import activate_session
+        from excalibur_mcp.server import activate_session
 
         with _mock_user_id(None):
             result = await activate_session(passphrase="pass")
@@ -179,7 +179,7 @@ class TestActivateSession:
 class TestSessionStatus:
     @pytest.mark.asyncio
     async def test_stdio_mode(self):
-        from excaliber_mcp.server import session_status
+        from excalibur_mcp.server import session_status
 
         with _mock_user_id(None):
             result = await session_status()
@@ -189,7 +189,7 @@ class TestSessionStatus:
 
     @pytest.mark.asyncio
     async def test_cloud_no_session(self):
-        from excaliber_mcp.server import session_status
+        from excalibur_mcp.server import session_status
 
         with _mock_user_id("user-1"):
             result = await session_status()
@@ -199,7 +199,7 @@ class TestSessionStatus:
 
     @pytest.mark.asyncio
     async def test_cloud_with_session(self, vault_dir):
-        from excaliber_mcp.server import register_credentials, session_status
+        from excalibur_mcp.server import register_credentials, session_status
 
         with _mock_user_id("user-1"):
             await register_credentials(
@@ -225,7 +225,7 @@ class TestPostTweetSessionFallback:
     @pytest.mark.asyncio
     async def test_uses_session_creds(self, vault_dir):
         """When a session is active, post_tweet should use session credentials."""
-        from excaliber_mcp.server import _get_x_credentials, register_credentials
+        from excalibur_mcp.server import _get_x_credentials, register_credentials
 
         with _mock_user_id("user-1"):
             await register_credentials(
@@ -241,7 +241,7 @@ class TestPostTweetSessionFallback:
     @pytest.mark.asyncio
     async def test_falls_back_to_env(self, monkeypatch):
         """Without a session, uses env vars."""
-        from excaliber_mcp.server import _get_x_credentials
+        from excalibur_mcp.server import _get_x_credentials
 
         monkeypatch.setenv("X_API_KEY", "env-key")
         monkeypatch.setenv("X_API_SECRET", "env-secret")
@@ -255,7 +255,7 @@ class TestPostTweetSessionFallback:
     @pytest.mark.asyncio
     async def test_cloud_no_session_falls_back_to_env(self, monkeypatch):
         """Cloud user without session also falls back to env vars."""
-        from excaliber_mcp.server import _get_x_credentials
+        from excalibur_mcp.server import _get_x_credentials
 
         monkeypatch.setenv("X_API_KEY", "env-key")
         monkeypatch.setenv("X_API_SECRET", "env-secret")
