@@ -260,7 +260,6 @@ async def _debit_or_error(tool_name: str) -> dict[str, Any] | None:
 
     try:
         cache = _get_ledger_cache()
-        ledger = await cache.get(user_id)
     except Exception as e:
         return {
             "success": False,
@@ -270,17 +269,21 @@ async def _debit_or_error(tool_name: str) -> dict[str, Any] | None:
             ),
         }
 
-    if not ledger.debit(tool_name, cost):
+    if not await cache.debit(user_id, tool_name, cost):
+        try:
+            ledger = await cache.get(user_id)
+            bal = ledger.balance_api_sats
+        except Exception:
+            bal = 0
         return {
             "success": False,
             "error": (
-                f"Insufficient balance ({ledger.balance_api_sats} api_sats) "
+                f"Insufficient balance ({bal} api_sats) "
                 f"for {tool_name} ({cost} api_sats). "
                 f"Use purchase_credits to add funds."
             ),
         }
 
-    cache.mark_dirty(user_id)
     return None
 
 
@@ -558,15 +561,16 @@ async def purchase_credits(amount_sats: int, certificate: str) -> dict[str, Any]
         return {"success": False, "error": str(e)}
 
     settings = get_settings()
-    if not settings.authority_public_key:
+    if not settings.dpyc_authority_npub:
         return {
             "success": False,
-            "error": "Operator misconfigured: AUTHORITY_PUBLIC_KEY not set.",
+            "error": "Operator misconfigured: DPYC_AUTHORITY_NPUB not set.",
         }
 
     return await credits.purchase_credits_tool(
         btcpay, cache, user_id, amount_sats,
         certificate=certificate,
+        authority_npub=settings.dpyc_authority_npub,
         tier_config_json=settings.btcpay_tier_config,
         user_tiers_json=settings.btcpay_user_tiers,
         default_credit_ttl_seconds=settings.credit_ttl_seconds,

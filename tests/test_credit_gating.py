@@ -111,14 +111,11 @@ class TestDebitOrError:
 
     @pytest.mark.asyncio
     async def test_sufficient_balance_debits(self):
-        """With mocked ledger, debit succeeds."""
+        """With mocked cache.debit(), debit succeeds."""
         from excaliber_mcp.server import _debit_or_error
 
-        mock_ledger = MagicMock()
-        mock_ledger.debit.return_value = True
-
         mock_cache = MagicMock()
-        mock_cache.get = AsyncMock(return_value=mock_ledger)
+        mock_cache.debit = AsyncMock(return_value=True)
 
         _dpyc_sessions["user-1"] = _SAMPLE_NPUB
         with _mock_user_id("user-1"), \
@@ -126,19 +123,18 @@ class TestDebitOrError:
             result = await _debit_or_error("post_tweet")
 
         assert result is None
-        mock_ledger.debit.assert_called_once_with("post_tweet", 1)
-        mock_cache.mark_dirty.assert_called_once_with(_SAMPLE_NPUB)
+        mock_cache.debit.assert_called_once_with(_SAMPLE_NPUB, "post_tweet", 1)
 
     @pytest.mark.asyncio
     async def test_insufficient_balance_returns_error(self):
-        """With mocked ledger at zero, debit fails."""
+        """With mocked cache.debit() returning False, debit fails."""
         from excaliber_mcp.server import _debit_or_error
 
         mock_ledger = MagicMock()
-        mock_ledger.debit.return_value = False
         mock_ledger.balance_api_sats = 0
 
         mock_cache = MagicMock()
+        mock_cache.debit = AsyncMock(return_value=False)
         mock_cache.get = AsyncMock(return_value=mock_ledger)
 
         _dpyc_sessions["user-1"] = _SAMPLE_NPUB
@@ -150,6 +146,7 @@ class TestDebitOrError:
         assert result["success"] is False
         assert "Insufficient" in result["error"]
         assert "purchase_credits" in result["error"]
+        mock_cache.debit.assert_called_once_with(_SAMPLE_NPUB, "post_tweet", 1)
 
 
 # ---------------------------------------------------------------------------
@@ -196,12 +193,8 @@ class TestPostTweetGated:
         monkeypatch.setenv("X_ACCESS_TOKEN", "t")
         monkeypatch.setenv("X_ACCESS_TOKEN_SECRET", "ts")
 
-        mock_ledger = MagicMock()
-        mock_ledger.debit.return_value = True
-        mock_ledger.balance_api_sats = 99
-
         mock_cache = MagicMock()
-        mock_cache.get = AsyncMock(return_value=mock_ledger)
+        mock_cache.debit = AsyncMock(return_value=True)
 
         mock_resp = MagicMock()
         mock_resp.status_code = 201
@@ -219,7 +212,7 @@ class TestPostTweetGated:
             result = await post_tweet("hi")
 
         assert result["tweet_id"] == "999"
-        mock_ledger.debit.assert_called_once_with("post_tweet", 1)
+        mock_cache.debit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_insufficient_funds_blocks_tweet(self):
@@ -227,10 +220,10 @@ class TestPostTweetGated:
         from excaliber_mcp.server import post_tweet
 
         mock_ledger = MagicMock()
-        mock_ledger.debit.return_value = False
         mock_ledger.balance_api_sats = 0
 
         mock_cache = MagicMock()
+        mock_cache.debit = AsyncMock(return_value=False)
         mock_cache.get = AsyncMock(return_value=mock_ledger)
 
         _dpyc_sessions["user-1"] = _SAMPLE_NPUB

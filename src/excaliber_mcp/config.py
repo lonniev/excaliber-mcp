@@ -30,12 +30,19 @@ class Settings(BaseSettings):
     tollbooth_royalty_percent: float = 0.02
     tollbooth_royalty_min_sats: int = 10
 
-    # Authority certificate verification (Ed25519 public key PEM)
-    authority_public_key: str | None = None
+    # DPYC Nostr identity
+    dpyc_operator_npub: str | None = None
+    dpyc_authority_npub: str | None = None
+
+    # Credit expiration
     credit_ttl_seconds: int | None = 604800  # 7 days
 
     # Commerce vault backend (pick one)
     neon_database_url: str | None = None  # Primary (serverless Postgres)
+
+    # OpenTimestamps Bitcoin anchoring
+    tollbooth_ots_enabled: str | None = None  # "true" to enable
+    tollbooth_ots_calendars: str | None = None  # Comma-separated URLs
 
     # Credential vault location
     excaliber_vault_dir: str | None = None
