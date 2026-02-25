@@ -247,15 +247,11 @@ async def _debit_or_error(tool_name: str) -> dict[str, Any] | None:
     """Check balance and debit credits for a paid tool call.
 
     Returns None to proceed, or an error dict to short-circuit.
-    Free tools and STDIO mode skip gating.
+    Free tools skip gating. All paid tools require credits — including STDIO mode.
     """
     cost = TOOL_COSTS.get(tool_name, 0)
     if cost == 0:
         return None
-
-    horizon_id = _get_current_user_id()
-    if not horizon_id:
-        return None  # STDIO mode — no gating
 
     try:
         user_id = _get_effective_user_id()
@@ -265,8 +261,14 @@ async def _debit_or_error(tool_name: str) -> dict[str, Any] | None:
     try:
         cache = _get_ledger_cache()
         ledger = await cache.get(user_id)
-    except Exception:
-        return None  # Vault not configured — skip gating
+    except Exception as e:
+        return {
+            "success": False,
+            "error": (
+                f"Credit system unavailable: {e}. "
+                "The operator must configure NEON_DATABASE_URL to enable credits."
+            ),
+        }
 
     if not ledger.debit(tool_name, cost):
         return {

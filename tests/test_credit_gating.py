@@ -73,11 +73,17 @@ class TestDebitOrError:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_stdio_mode_skips_gating(self):
+    async def test_stdio_mode_still_gates(self):
+        """STDIO mode also requires credits — no free pass."""
         from excaliber_mcp.server import _debit_or_error
-        with _mock_user_id(None):
+        # Simulate vault not configured
+        with _mock_user_id(None), \
+             patch("excaliber_mcp.server._get_ledger_cache",
+                   side_effect=ValueError("Commerce vault not configured. Set NEON_DATABASE_URL")):
             result = await _debit_or_error("post_tweet")
-        assert result is None
+        assert result is not None
+        assert result["success"] is False
+        assert "Credit system unavailable" in result["error"]
 
     @pytest.mark.asyncio
     async def test_no_dpyc_identity_returns_error(self):
@@ -91,14 +97,17 @@ class TestDebitOrError:
         assert "DPYC" in result["error"] or "npub" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_vault_not_configured_skips_gating(self):
-        """If commerce vault isn't configured, gating is skipped (graceful)."""
+    async def test_vault_not_configured_blocks(self):
+        """If commerce vault isn't configured, paid tools are blocked."""
         from excaliber_mcp.server import _debit_or_error
         _dpyc_sessions["user-1"] = _SAMPLE_NPUB
-        with _mock_user_id("user-1"):
+        with _mock_user_id("user-1"), \
+             patch("excaliber_mcp.server._get_ledger_cache",
+                   side_effect=ValueError("Commerce vault not configured. Set NEON_DATABASE_URL")):
             result = await _debit_or_error("post_tweet")
-        # Should return None (skip gating) since no vault configured
-        assert result is None
+        assert result is not None
+        assert result["success"] is False
+        assert "NEON_DATABASE_URL" in result["error"]
 
     @pytest.mark.asyncio
     async def test_sufficient_balance_debits(self):
@@ -178,8 +187,8 @@ class TestRollbackDebit:
 
 class TestPostTweetGated:
     @pytest.mark.asyncio
-    async def test_stdio_mode_no_gating(self, monkeypatch):
-        """In STDIO mode, post_tweet proceeds without credit check."""
+    async def test_stdio_mode_with_credits(self, monkeypatch):
+        """In STDIO mode, post_tweet still requires credits via 'stdio:0' identity."""
         from excaliber_mcp.server import post_tweet
 
         monkeypatch.setenv("X_API_KEY", "k")
@@ -187,11 +196,19 @@ class TestPostTweetGated:
         monkeypatch.setenv("X_ACCESS_TOKEN", "t")
         monkeypatch.setenv("X_ACCESS_TOKEN_SECRET", "ts")
 
+        mock_ledger = MagicMock()
+        mock_ledger.debit.return_value = True
+        mock_ledger.balance_api_sats = 99
+
+        mock_cache = MagicMock()
+        mock_cache.get = AsyncMock(return_value=mock_ledger)
+
         mock_resp = MagicMock()
         mock_resp.status_code = 201
         mock_resp.json.return_value = {"data": {"id": "999", "text": "hi"}}
 
         with _mock_user_id(None), \
+             patch("excaliber_mcp.server._get_ledger_cache", return_value=mock_cache), \
              patch("excaliber_mcp.x_client.httpx.AsyncClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_resp
@@ -202,6 +219,7 @@ class TestPostTweetGated:
             result = await post_tweet("hi")
 
         assert result["tweet_id"] == "999"
+        mock_ledger.debit.assert_called_once_with("post_tweet", 1)
 
     @pytest.mark.asyncio
     async def test_insufficient_funds_blocks_tweet(self):
@@ -230,9 +248,11 @@ class TestPostTweetGated:
 
 
 class TestSettings:
-    def test_loads_defaults(self):
+    def test_loads_defaults(self, monkeypatch, tmp_path):
         from excaliber_mcp.config import Settings
-        s = Settings()
+        # Isolate from project .env by pointing to empty dir
+        monkeypatch.chdir(tmp_path)
+        s = Settings(_env_file=None)
         assert s.seed_balance_sats == 0
         assert s.btcpay_host is None
         assert s.credit_ttl_seconds == 604800
