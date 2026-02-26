@@ -46,3 +46,7 @@ class Settings(BaseSettings):
 
     # Credential vault location
     excalibur_vault_dir: str | None = None
+
+    # Secure Courier (Nostr DM credential exchange)
+    tollbooth_nostr_operator_nsec: str | None = None
+    tollbooth_nostr_relays: str | None = None  # Comma-separated relay URLs

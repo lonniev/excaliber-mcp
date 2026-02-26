@@ -34,6 +34,9 @@ TOOL_COSTS: dict[str, int] = {
     "purchase_credits": ToolTier.FREE,
     "check_payment": ToolTier.FREE,
     "account_statement": ToolTier.FREE,
+    "request_credential_channel": ToolTier.FREE,
+    "receive_credentials": ToolTier.FREE,
+    "forget_credentials": ToolTier.FREE,
     # Paid
     "post_tweet": ToolTier.READ,  # 1 api_sat (text only)
     "post_tweet_image": ToolTier.WRITE,  # 2 api_sats (with image)
@@ -132,6 +135,65 @@ def _get_vault():
 
 
 # ---------------------------------------------------------------------------
+# Secure Courier singleton (Nostr DM credential exchange)
+# ---------------------------------------------------------------------------
+
+_courier_exchange = None
+
+
+def _get_courier_exchange():
+    """Get or create the NostrCredentialExchange singleton."""
+    global _courier_exchange
+    if _courier_exchange is not None:
+        return _courier_exchange
+
+    from tollbooth.credential_templates import CredentialTemplate, FieldSpec
+    from tollbooth.nostr_credentials import NostrCredentialExchange
+
+    settings = get_settings()
+
+    nsec = settings.tollbooth_nostr_operator_nsec
+    if not nsec:
+        raise ValueError(
+            "Secure Courier not configured. "
+            "Set TOLLBOOTH_NOSTR_OPERATOR_NSEC to enable credential delivery via Nostr DM."
+        )
+
+    relays_str = settings.tollbooth_nostr_relays or "wss://relay.primal.net,wss://relay.damus.io,wss://nos.lol"
+    relays = [r.strip() for r in relays_str.split(",") if r.strip()]
+
+    templates = {
+        "x": CredentialTemplate(
+            service="x",
+            version=1,
+            fields={
+                "api_key": FieldSpec(required=True, sensitive=True),
+                "api_secret": FieldSpec(required=True, sensitive=True),
+                "access_token": FieldSpec(required=True, sensitive=True),
+                "access_token_secret": FieldSpec(required=True, sensitive=True),
+            },
+            description="X/Twitter API v2 credentials (OAuth 1.0a User Context)",
+        ),
+    }
+
+    # Credential vault for persistence across sessions
+    from excalibur_mcp.vault import FileCredentialVault
+
+    vault_dir = settings.excalibur_vault_dir or os.environ.get(
+        "EXCALIBUR_VAULT_DIR", _DEFAULT_VAULT_DIR
+    )
+    credential_vault = FileCredentialVault(vault_dir)
+
+    _courier_exchange = NostrCredentialExchange(
+        nsec=nsec,
+        relays=relays,
+        templates=templates,
+        credential_vault=credential_vault,
+    )
+    return _courier_exchange
+
+
+# ---------------------------------------------------------------------------
 # Commerce vault + LedgerCache + BTCPay singletons
 # ---------------------------------------------------------------------------
 
@@ -221,7 +283,12 @@ def _get_btcpay():
 
 
 def _get_x_credentials():
-    """Get X API credentials: per-user session first, env vars as fallback."""
+    """Get X API credentials: per-user session first, env vars as fallback.
+
+    The Secure Courier flow (request_credential_channel → receive_credentials)
+    activates the session automatically, so by the time post_tweet runs the
+    session is already populated.
+    """
     from excalibur_mcp.vault import get_session
     from excalibur_mcp.x_client import XCredentials
 
@@ -533,6 +600,114 @@ async def activate_session(passphrase: str) -> dict[str, Any]:
             "Credit operations will not work until you re-register with an npub."
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# MCP Tools — Secure Courier (Free)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def request_credential_channel(service: str = "x") -> dict[str, Any]:
+    """Open a Secure Courier channel for out-of-band credential delivery.
+
+    Returns the operator's Nostr npub, relay list, and credential template
+    so you know where to send your API keys via encrypted Nostr DM.
+
+    How it works:
+    1. Call this tool — it returns an npub and instructions.
+    2. Open your Nostr client (Primal, Damus, Amethyst, etc.).
+    3. Send a DM to the npub with a JSON payload matching the template.
+    4. Return here and call receive_credentials with your npub.
+
+    Your credentials never appear in this chat — they travel on a
+    separate, encrypted Nostr channel (the "diplomatic pouch").
+
+    Args:
+        service: Which credential template to use (default "x" for X/Twitter).
+    """
+    try:
+        exchange = _get_courier_exchange()
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
+    try:
+        return await exchange.open_channel(service)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+async def receive_credentials(sender_npub: str, service: str = "x") -> dict[str, Any]:
+    """Pick up credentials delivered via the Secure Courier.
+
+    If you've previously delivered credentials for this service, they'll
+    be returned from the encrypted vault without any relay I/O.
+
+    If this is your first time, the tool checks Nostr relays for your
+    encrypted DM, validates it against the template, stores it in the
+    vault for future sessions, and destroys the relay copy.
+
+    Credential values are NEVER echoed back — only the field count and
+    service name are returned.
+
+    Args:
+        sender_npub: Your Nostr public key (npub1...) — the one you
+            sent the DM from.
+        service: Which credential template to match (default "x").
+    """
+    try:
+        exchange = _get_courier_exchange()
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
+    try:
+        result = await exchange.receive(sender_npub, service=service)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+    if result.get("success") and result.get("credentials"):
+        # Activate session with the received credentials
+        creds = result["credentials"]
+        user_id = _get_current_user_id()
+        if user_id and all(
+            k in creds for k in ("api_key", "api_secret", "access_token", "access_token_secret")
+        ):
+            from excalibur_mcp.vault import set_session
+
+            set_session(
+                user_id,
+                creds["api_key"],
+                creds["api_secret"],
+                creds["access_token"],
+                creds["access_token_secret"],
+                npub=sender_npub,
+            )
+            result["session_activated"] = True
+
+        # Never echo credential values
+        del result["credentials"]
+
+    return result
+
+
+@mcp.tool()
+async def forget_credentials(sender_npub: str, service: str = "x") -> dict[str, Any]:
+    """Delete vaulted credentials so you can re-deliver via Secure Courier.
+
+    Use this when you've rotated your API keys and need to send fresh
+    credentials through the diplomatic pouch.
+
+    Args:
+        sender_npub: Your Nostr public key (npub1...).
+        service: Which service's credentials to forget (default "x").
+    """
+    try:
+        exchange = _get_courier_exchange()
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
+    return await exchange.forget(sender_npub, service=service)
 
 
 # ---------------------------------------------------------------------------

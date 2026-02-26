@@ -242,3 +242,47 @@ class FileVault:
             )
         with open(path) as f:
             return f.read()
+
+
+class FileCredentialVault:
+    """File-based credential vault implementing CredentialVaultBackend.
+
+    Stores NIP-04-encrypted credential blobs as files, keyed by
+    (service, npub).  Used by the Secure Courier Service to persist
+    credentials across sessions.
+    """
+
+    def __init__(self, vault_dir: str) -> None:
+        self._dir = os.path.join(vault_dir, "courier")
+        os.makedirs(self._dir, exist_ok=True)
+
+    def _path_for(self, service: str, npub: str) -> str:
+        safe_key = base64.urlsafe_b64encode(
+            f"{service}:{npub}".encode()
+        ).decode()
+        return os.path.join(self._dir, f"{safe_key}.blob")
+
+    async def store_credentials(
+        self, service: str, npub: str, encrypted_blob: str,
+    ) -> None:
+        path = self._path_for(service, npub)
+        with open(path, "w") as f:
+            f.write(encrypted_blob)
+
+    async def fetch_credentials(
+        self, service: str, npub: str,
+    ) -> str | None:
+        path = self._path_for(service, npub)
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return f.read()
+
+    async def delete_credentials(
+        self, service: str, npub: str,
+    ) -> bool:
+        path = self._path_for(service, npub)
+        if os.path.exists(path):
+            os.remove(path)
+            return True
+        return False
