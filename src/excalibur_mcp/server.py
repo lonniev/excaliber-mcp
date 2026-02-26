@@ -148,7 +148,7 @@ def _get_courier_exchange():
         return _courier_exchange
 
     from tollbooth.credential_templates import CredentialTemplate, FieldSpec
-    from tollbooth.nostr_credentials import NostrCredentialExchange
+    from tollbooth.nostr_credentials import NostrCredentialExchange, NostrProfile
 
     settings = get_settings()
 
@@ -188,6 +188,20 @@ def _get_courier_exchange():
         templates=templates,
         credential_vault=credential_vault,
     )
+
+    # Publish operator Nostr profile (kind 0) so patrons see a
+    # friendly name and avatar instead of a raw npub string.
+    _courier_exchange.publish_profile(NostrProfile(
+        name="excalibur-mcp",
+        display_name="eXcalibur MCP",
+        about=(
+            "Sword-swift tweets to X — Tollbooth DPYC monetized, Nostr-native. "
+            "Send credentials via encrypted DM (Secure Courier)."
+        ),
+        picture="https://raw.githubusercontent.com/lonniev/excalibur-mcp/main/assets/avatar.png",
+        website="https://github.com/lonniev/excalibur-mcp",
+    ))
+
     return _courier_exchange
 
 
@@ -606,16 +620,23 @@ async def activate_session(passphrase: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def request_credential_channel(service: str = "x") -> dict[str, Any]:
+async def request_credential_channel(
+    service: str = "x",
+    recipient_npub: str | None = None,
+) -> dict[str, Any]:
     """Open a Secure Courier channel for out-of-band credential delivery.
 
-    Returns the operator's Nostr npub, relay list, and credential template
-    so you know where to send your API keys via encrypted Nostr DM.
+    If you provide your npub, the service sends you a welcome DM — just
+    open your Nostr client and reply to it with your credentials. No need
+    to copy-paste an npub or compose a new message.
+
+    If no npub is provided, falls back to returning the operator's npub
+    and instructions for manual DM initiation.
 
     How it works:
-    1. Call this tool — it returns an npub and instructions.
+    1. Call this tool with your npub — a welcome DM arrives in your Nostr inbox.
     2. Open your Nostr client (Primal, Damus, Amethyst, etc.).
-    3. Send a DM to the npub with a JSON payload matching the template.
+    3. Reply to the welcome message with a JSON payload matching the template.
     4. Return here and call receive_credentials with your npub.
 
     Your credentials never appear in this chat — they travel on a
@@ -623,6 +644,8 @@ async def request_credential_channel(service: str = "x") -> dict[str, Any]:
 
     Args:
         service: Which credential template to use (default "x" for X/Twitter).
+        recipient_npub: Your Nostr public key (npub1...). If provided, you'll
+            receive a welcome DM to reply to instead of composing from scratch.
     """
     try:
         exchange = _get_courier_exchange()
@@ -630,7 +653,7 @@ async def request_credential_channel(service: str = "x") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
     try:
-        return await exchange.open_channel(service)
+        return await exchange.open_channel(service, recipient_npub=recipient_npub)
     except Exception as e:
         return {"success": False, "error": str(e)}
 

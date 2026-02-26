@@ -94,6 +94,26 @@ class TestRequestCredentialChannel:
         assert result["service"] == "x"
 
     @pytest.mark.asyncio
+    async def test_sends_welcome_dm_with_recipient_npub(self, vault_dir, operator_nsec):
+        from excalibur_mcp.server import request_credential_channel
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+        )
+
+        with patch.object(srv, "get_settings", return_value=settings):
+            exchange = srv._get_courier_exchange()
+            with patch.object(exchange, "_start_subscription"), \
+                 patch.object(exchange, "send_dm") as mock_send:
+                result = await request_credential_channel("x", recipient_npub=_SAMPLE_NPUB)
+
+        assert result["success"] is True
+        assert result["welcome_dm_sent"] is True
+        mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_not_configured_returns_error(self):
         from excalibur_mcp.server import request_credential_channel
         import excalibur_mcp.server as srv
