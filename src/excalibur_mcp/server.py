@@ -165,14 +165,12 @@ def _get_courier_exchange():
     templates = {
         "x": CredentialTemplate(
             service="x",
-            version=1,
+            version=2,
             fields={
-                "api_key": FieldSpec(required=True, sensitive=True),
-                "api_secret": FieldSpec(required=True, sensitive=True),
                 "access_token": FieldSpec(required=True, sensitive=True),
                 "access_token_secret": FieldSpec(required=True, sensitive=True),
             },
-            description="X/Twitter API v2 credentials (OAuth 1.0a User Context)",
+            description="X/Twitter user access token (OAuth 1.0a User Context)",
         ),
     }
 
@@ -667,23 +665,33 @@ async def receive_credentials(sender_npub: str, service: str = "x") -> dict[str,
         return {"success": False, "error": str(e)}
 
     if result.get("success") and result.get("credentials"):
-        # Activate session with the received credentials
+        # Activate session: patron delivers access_token pair,
+        # operator's api_key/api_secret come from ENV.
         creds = result["credentials"]
         user_id = _get_current_user_id()
         if user_id and all(
-            k in creds for k in ("api_key", "api_secret", "access_token", "access_token_secret")
+            k in creds for k in ("access_token", "access_token_secret")
         ):
-            from excalibur_mcp.vault import set_session
+            api_key = os.environ.get("X_API_KEY", "")
+            api_secret = os.environ.get("X_API_SECRET", "")
+            if api_key and api_secret:
+                from excalibur_mcp.vault import set_session
 
-            set_session(
-                user_id,
-                creds["api_key"],
-                creds["api_secret"],
-                creds["access_token"],
-                creds["access_token_secret"],
-                npub=sender_npub,
-            )
-            result["session_activated"] = True
+                set_session(
+                    user_id,
+                    api_key,
+                    api_secret,
+                    creds["access_token"],
+                    creds["access_token_secret"],
+                    npub=sender_npub,
+                )
+                result["session_activated"] = True
+            else:
+                result["session_activated"] = False
+                result["warning"] = (
+                    "Credentials received but operator X_API_KEY/X_API_SECRET "
+                    "not configured. Session not activated."
+                )
 
         # Never echo credential values
         del result["credentials"]

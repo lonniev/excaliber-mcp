@@ -90,7 +90,7 @@ class TestRequestCredentialChannel:
 
         assert result["success"] is True
         assert result["npub"].startswith("npub1")
-        assert "api_key" in result["instructions"]
+        assert "access_token" in result["instructions"]
         assert result["service"] == "x"
 
     @pytest.mark.asyncio
@@ -123,12 +123,10 @@ class TestReceiveCredentials:
         mock_result = {
             "success": True,
             "service": "x",
-            "fields_received": 4,
-            "sensitive_fields": 4,
+            "fields_received": 2,
+            "sensitive_fields": 2,
             "encryption": "vault",
             "credentials": {
-                "api_key": "k",
-                "api_secret": "s",
                 "access_token": "t",
                 "access_token_secret": "ts",
             },
@@ -136,6 +134,7 @@ class TestReceiveCredentials:
         }
 
         with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
              _mock_user_id("user-42"):
             # Initialize exchange, then mock receive
             exchange = srv._get_courier_exchange()
@@ -149,7 +148,11 @@ class TestReceiveCredentials:
 
         session = get_session("user-42")
         assert session is not None
-        assert session.x_api_key == "k"
+        # api_key comes from operator ENV, access_token from patron's pouch
+        assert session.x_api_key == "op-key"
+        assert session.x_api_secret == "op-secret"
+        assert session.x_access_token == "t"
+        assert session.x_access_token_secret == "ts"
 
     @pytest.mark.asyncio
     async def test_credentials_never_echoed(self, vault_dir, operator_nsec):
@@ -165,12 +168,10 @@ class TestReceiveCredentials:
         mock_result = {
             "success": True,
             "service": "x",
-            "fields_received": 4,
-            "sensitive_fields": 4,
+            "fields_received": 2,
+            "sensitive_fields": 2,
             "encryption": "nip04",
             "credentials": {
-                "api_key": "secret-key",
-                "api_secret": "secret-secret",
                 "access_token": "secret-token",
                 "access_token_secret": "secret-ts",
             },
@@ -178,13 +179,14 @@ class TestReceiveCredentials:
         }
 
         with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
              _mock_user_id("user-1"):
             exchange = srv._get_courier_exchange()
             with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
                 result = await receive_credentials(_SAMPLE_NPUB)
 
         assert "credentials" not in result
-        assert "secret-key" not in str(result)
+        assert "secret-token" not in str(result)
 
 
 class TestForgetCredentials:
