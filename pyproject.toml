@@ -28,6 +28,9 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.8.0",
 ]
+png = [
+    "cairosvg>=2.7.0",
+]
 
 [project.scripts]
 excalibur-mcp = "excalibur_mcp.server:main"

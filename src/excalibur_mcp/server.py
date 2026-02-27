@@ -40,6 +40,7 @@ TOOL_COSTS: dict[str, int] = {
     # Paid
     "post_tweet": ToolTier.READ,  # 1 api_sat (text only)
     "post_tweet_image": ToolTier.WRITE,  # 2 api_sats (with image)
+    "account_statement_infographic": ToolTier.READ,  # 1 api_sat (SVG render)
 }
 
 
@@ -863,12 +864,74 @@ async def account_statement(days: int = 30) -> dict[str, Any]:
     except ValueError as e:
         return {"success": False, "error": str(e)}
 
-    return await credits.account_statement_tool(cache, user_id, days=days)
+    result = await credits.account_statement_tool(cache, user_id, days=days)
+    if result.get("success"):
+        result["infographic_hint"] = (
+            "Call account_statement_infographic for a visual SVG version (1 api_sat)."
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
 # MCP Tools — Paid
 # ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def account_statement_infographic(days: int = 30) -> dict[str, Any]:
+    """Generate a visual SVG infographic of your account statement.
+
+    Returns the same data as account_statement, rendered as a dark-themed
+    SVG graphic with balance hero, metrics cards, health gauge, tranche
+    table, and tool usage breakdown. Suitable for sharing or embedding.
+
+    If cairosvg is installed, also returns a base64-encoded PNG rendition.
+
+    Costs 1 api_sat per call.
+
+    Args:
+        days: Number of days of daily usage history to include (default 30).
+
+    Returns:
+        svg: The SVG markup string.
+        png_base64: Base64-encoded PNG (only when cairosvg is installed).
+        generated_at: ISO timestamp of generation.
+    """
+    gate = await _debit_or_error("account_statement_infographic")
+    if gate:
+        return gate
+
+    try:
+        user_id = _get_effective_user_id()
+        cache = _get_ledger_cache()
+    except ValueError as e:
+        await _rollback_debit("account_statement_infographic")
+        return {"success": False, "error": str(e)}
+
+    try:
+        from excalibur_mcp.infographic import render_account_infographic, svg_to_png_base64
+        from tollbooth.tools import credits
+
+        data = await credits.account_statement_tool(cache, user_id, days=days)
+        if not data.get("success"):
+            await _rollback_debit("account_statement_infographic")
+            return data
+
+        svg = render_account_infographic(data)
+        result: dict[str, Any] = {
+            "success": True,
+            "svg": svg,
+            "generated_at": data.get("generated_at", ""),
+        }
+
+        png_b64 = svg_to_png_base64(svg)
+        if png_b64:
+            result["png_base64"] = png_b64
+
+        return await _with_warning(result)
+    except Exception:
+        await _rollback_debit("account_statement_infographic")
+        raise
 
 
 @mcp.tool()
