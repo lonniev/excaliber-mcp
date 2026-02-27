@@ -18,12 +18,12 @@ def _clean_state():
     _dpyc_sessions.clear()
     import excalibur_mcp.server as srv
     srv._vault_instance = None
-    srv._courier_exchange = None
+    srv._courier_service = None
     yield
     _sessions.clear()
     _dpyc_sessions.clear()
     srv._vault_instance = None
-    srv._courier_exchange = None
+    srv._courier_service = None
 
 
 @pytest.fixture
@@ -104,7 +104,8 @@ class TestRequestCredentialChannel:
         )
 
         with patch.object(srv, "get_settings", return_value=settings):
-            exchange = srv._get_courier_exchange()
+            courier = srv._get_courier_service()
+            exchange = courier.exchange
             with patch.object(exchange, "_start_subscription"), \
                  patch.object(exchange, "send_dm") as mock_send:
                 result = await request_credential_channel("x", recipient_npub=_SAMPLE_NPUB)
@@ -140,7 +141,8 @@ class TestReceiveCredentials:
             excalibur_vault_dir=vault_dir,
         )
 
-        mock_result = {
+        # Mock result from the underlying exchange (includes credentials)
+        exchange_result = {
             "success": True,
             "service": "x",
             "fields_received": 2,
@@ -156,14 +158,14 @@ class TestReceiveCredentials:
         with patch.object(srv, "get_settings", return_value=settings), \
              patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
              _mock_user_id("user-42"):
-            # Initialize exchange, then mock receive
-            exchange = srv._get_courier_exchange()
-            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+            # Initialize the service, then mock the underlying exchange
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=exchange_result):
                 result = await receive_credentials(_SAMPLE_NPUB)
 
         assert result["success"] is True
         assert result["session_activated"] is True
-        # Credentials should NOT be in the result
+        # Credentials should NOT be in the result (stripped by SecureCourierService)
         assert "credentials" not in result
 
         session = get_session("user-42")
@@ -185,7 +187,7 @@ class TestReceiveCredentials:
             excalibur_vault_dir=vault_dir,
         )
 
-        mock_result = {
+        exchange_result = {
             "success": True,
             "service": "x",
             "fields_received": 2,
@@ -201,8 +203,8 @@ class TestReceiveCredentials:
         with patch.object(srv, "get_settings", return_value=settings), \
              patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
              _mock_user_id("user-1"):
-            exchange = srv._get_courier_exchange()
-            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=exchange_result):
                 result = await receive_credentials(_SAMPLE_NPUB)
 
         assert "credentials" not in result
@@ -221,7 +223,7 @@ class TestReceiveCredentials:
             excalibur_vault_dir=vault_dir,
         )
 
-        mock_result = {
+        exchange_result = {
             "success": True,
             "service": "x",
             "fields_received": 2,
@@ -237,8 +239,8 @@ class TestReceiveCredentials:
         with patch.object(srv, "get_settings", return_value=settings), \
              patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
              _mock_user_id("user-dpyc"):
-            exchange = srv._get_courier_exchange()
-            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=exchange_result):
                 result = await receive_credentials(_SAMPLE_NPUB)
 
         assert result["dpyc_npub"] == _SAMPLE_NPUB
@@ -256,7 +258,7 @@ class TestReceiveCredentials:
             seed_balance_sats=100,
         )
 
-        mock_result = {
+        exchange_result = {
             "success": True,
             "service": "x",
             "fields_received": 2,
@@ -273,8 +275,8 @@ class TestReceiveCredentials:
              patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
              _mock_user_id("user-seed"), \
              patch.object(srv, "_seed_balance", new_callable=AsyncMock, return_value=True) as mock_seed:
-            exchange = srv._get_courier_exchange()
-            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=exchange_result):
                 result = await receive_credentials(_SAMPLE_NPUB)
 
         mock_seed.assert_called_once_with(_SAMPLE_NPUB)
@@ -293,7 +295,7 @@ class TestReceiveCredentials:
             seed_balance_sats=100,
         )
 
-        mock_result = {
+        exchange_result = {
             "success": True,
             "service": "x",
             "fields_received": 2,
@@ -310,8 +312,8 @@ class TestReceiveCredentials:
              patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
              _mock_user_id("user-repeat"), \
              patch.object(srv, "_seed_balance", new_callable=AsyncMock, return_value=False):
-            exchange = srv._get_courier_exchange()
-            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=exchange_result):
                 result = await receive_credentials(_SAMPLE_NPUB)
 
         assert "seed_applied" not in result
@@ -329,6 +331,7 @@ class TestForgetCredentials:
         )
 
         with patch.object(srv, "get_settings", return_value=settings):
+            # _get_courier_service() creates the service with a real FileCredentialVault
             result = await forget_credentials(_SAMPLE_NPUB)
 
         assert result["success"] is True

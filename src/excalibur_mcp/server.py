@@ -136,20 +136,71 @@ def _get_vault():
 
 
 # ---------------------------------------------------------------------------
-# Secure Courier singleton (Nostr DM credential exchange)
+# Secure Courier singleton (high-level service wrapper)
 # ---------------------------------------------------------------------------
 
-_courier_exchange = None
+_courier_service = None
 
 
-def _get_courier_exchange():
-    """Get or create the NostrCredentialExchange singleton."""
-    global _courier_exchange
-    if _courier_exchange is not None:
-        return _courier_exchange
+async def _on_x_credentials_received(
+    sender_npub: str, credentials: dict[str, str], service: str,
+) -> dict[str, Any] | None:
+    """Operator callback: activate session + DPYC identity after credential receipt.
+
+    Combines the patron's access_token/secret with the operator's api_key/secret,
+    establishes the in-memory session, maps the DPYC npub identity, and seeds the
+    starter balance for first-time users.
+    """
+    result: dict[str, Any] = {}
+
+    user_id = _get_current_user_id()
+    if not user_id:
+        return result
+
+    if not all(k in credentials for k in ("access_token", "access_token_secret")):
+        return result
+
+    api_key = os.environ.get("X_API_KEY", "")
+    api_secret = os.environ.get("X_API_SECRET", "")
+
+    if api_key and api_secret:
+        from excalibur_mcp.vault import set_session
+
+        set_session(
+            user_id,
+            api_key,
+            api_secret,
+            credentials["access_token"],
+            credentials["access_token_secret"],
+            npub=sender_npub,
+        )
+        result["session_activated"] = True
+        result["dpyc_npub"] = sender_npub
+
+        # Seed starter balance (idempotent)
+        seed_applied = await _seed_balance(sender_npub)
+        if seed_applied:
+            result["seed_applied"] = True
+            result["seed_balance_api_sats"] = get_settings().seed_balance_sats
+    else:
+        result["session_activated"] = False
+        result["warning"] = (
+            "Credentials received but operator X_API_KEY/X_API_SECRET "
+            "not configured. Session not activated."
+        )
+
+    return result
+
+
+def _get_courier_service():
+    """Get or create the SecureCourierService singleton."""
+    global _courier_service
+    if _courier_service is not None:
+        return _courier_service
 
     from tollbooth.credential_templates import CredentialTemplate, FieldSpec
-    from tollbooth.nostr_credentials import NostrCredentialExchange, NostrProfile
+    from tollbooth.nostr_credentials import NostrProfile
+    from tollbooth.secure_courier import SecureCourierService
 
     settings = get_settings()
 
@@ -183,27 +234,25 @@ def _get_courier_exchange():
     )
     credential_vault = FileCredentialVault(vault_dir)
 
-    _courier_exchange = NostrCredentialExchange(
-        nsec=nsec,
+    _courier_service = SecureCourierService(
+        operator_nsec=nsec,
         relays=relays,
         templates=templates,
         credential_vault=credential_vault,
+        profile=NostrProfile(
+            name="excalibur-mcp",
+            display_name="eXcalibur MCP",
+            about=(
+                "Sword-swift tweets to X — Tollbooth DPYC monetized, Nostr-native. "
+                "Send credentials via encrypted DM (Secure Courier)."
+            ),
+            picture="https://raw.githubusercontent.com/lonniev/excalibur-mcp/main/assets/avatar.png",
+            website="https://github.com/lonniev/excalibur-mcp",
+        ),
+        on_credentials_received=_on_x_credentials_received,
     )
 
-    # Publish operator Nostr profile (kind 0) so patrons see a
-    # friendly name and avatar instead of a raw npub string.
-    _courier_exchange.publish_profile(NostrProfile(
-        name="excalibur-mcp",
-        display_name="eXcalibur MCP",
-        about=(
-            "Sword-swift tweets to X — Tollbooth DPYC monetized, Nostr-native. "
-            "Send credentials via encrypted DM (Secure Courier)."
-        ),
-        picture="https://raw.githubusercontent.com/lonniev/excalibur-mcp/main/assets/avatar.png",
-        website="https://github.com/lonniev/excalibur-mcp",
-    ))
-
-    return _courier_exchange
+    return _courier_service
 
 
 # ---------------------------------------------------------------------------
@@ -649,12 +698,12 @@ async def request_credential_channel(
             receive a welcome DM to reply to instead of composing from scratch.
     """
     try:
-        exchange = _get_courier_exchange()
-    except ValueError as e:
+        courier = _get_courier_service()
+    except (ValueError, RuntimeError) as e:
         return {"success": False, "error": str(e)}
 
     try:
-        return await exchange.open_channel(service, recipient_npub=recipient_npub)
+        return await courier.open_channel(service, recipient_npub=recipient_npub)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -679,55 +728,14 @@ async def receive_credentials(sender_npub: str, service: str = "x") -> dict[str,
         service: Which credential template to match (default "x").
     """
     try:
-        exchange = _get_courier_exchange()
-    except ValueError as e:
+        courier = _get_courier_service()
+    except (ValueError, RuntimeError) as e:
         return {"success": False, "error": str(e)}
 
     try:
-        result = await exchange.receive(sender_npub, service=service)
+        return await courier.receive(sender_npub, service=service)
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-    if result.get("success") and result.get("credentials"):
-        # Activate session: patron delivers access_token pair,
-        # operator's api_key/api_secret come from ENV.
-        creds = result["credentials"]
-        user_id = _get_current_user_id()
-        if user_id and all(
-            k in creds for k in ("access_token", "access_token_secret")
-        ):
-            api_key = os.environ.get("X_API_KEY", "")
-            api_secret = os.environ.get("X_API_SECRET", "")
-            if api_key and api_secret:
-                from excalibur_mcp.vault import set_session
-
-                set_session(
-                    user_id,
-                    api_key,
-                    api_secret,
-                    creds["access_token"],
-                    creds["access_token_secret"],
-                    npub=sender_npub,
-                )
-                result["session_activated"] = True
-                result["dpyc_npub"] = sender_npub
-
-                # Seed starter balance (idempotent)
-                seed_applied = await _seed_balance(sender_npub)
-                if seed_applied:
-                    result["seed_applied"] = True
-                    result["seed_balance_api_sats"] = get_settings().seed_balance_sats
-            else:
-                result["session_activated"] = False
-                result["warning"] = (
-                    "Credentials received but operator X_API_KEY/X_API_SECRET "
-                    "not configured. Session not activated."
-                )
-
-        # Never echo credential values
-        del result["credentials"]
-
-    return result
 
 
 @mcp.tool()
@@ -742,11 +750,11 @@ async def forget_credentials(sender_npub: str, service: str = "x") -> dict[str, 
         service: Which service's credentials to forget (default "x").
     """
     try:
-        exchange = _get_courier_exchange()
-    except ValueError as e:
+        courier = _get_courier_service()
+    except (ValueError, RuntimeError) as e:
         return {"success": False, "error": str(e)}
 
-    return await exchange.forget(sender_npub, service=service)
+    return await courier.forget(sender_npub, service=service)
 
 
 # ---------------------------------------------------------------------------
