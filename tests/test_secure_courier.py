@@ -209,6 +209,114 @@ class TestReceiveCredentials:
         assert "secret-token" not in str(result)
 
 
+    @pytest.mark.asyncio
+    async def test_dpyc_identity_established_on_receive(self, vault_dir, operator_nsec):
+        """After successful receive, DPYC identity is established via sender_npub."""
+        from excalibur_mcp.server import receive_credentials
+        from excalibur_mcp.vault import get_dpyc_npub
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+        )
+
+        mock_result = {
+            "success": True,
+            "service": "x",
+            "fields_received": 2,
+            "sensitive_fields": 2,
+            "encryption": "vault",
+            "credentials": {
+                "access_token": "t",
+                "access_token_secret": "ts",
+            },
+            "message": "Credentials restored from vault.",
+        }
+
+        with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
+             _mock_user_id("user-dpyc"):
+            exchange = srv._get_courier_exchange()
+            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+                result = await receive_credentials(_SAMPLE_NPUB)
+
+        assert result["dpyc_npub"] == _SAMPLE_NPUB
+        assert get_dpyc_npub("user-dpyc") == _SAMPLE_NPUB
+
+    @pytest.mark.asyncio
+    async def test_seed_balance_applied_on_first_receive(self, vault_dir, operator_nsec):
+        """First credential receive seeds the starter balance."""
+        from excalibur_mcp.server import receive_credentials
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+            seed_balance_sats=100,
+        )
+
+        mock_result = {
+            "success": True,
+            "service": "x",
+            "fields_received": 2,
+            "sensitive_fields": 2,
+            "encryption": "vault",
+            "credentials": {
+                "access_token": "t",
+                "access_token_secret": "ts",
+            },
+            "message": "Credentials restored from vault.",
+        }
+
+        with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
+             _mock_user_id("user-seed"), \
+             patch.object(srv, "_seed_balance", new_callable=AsyncMock, return_value=True) as mock_seed:
+            exchange = srv._get_courier_exchange()
+            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+                result = await receive_credentials(_SAMPLE_NPUB)
+
+        mock_seed.assert_called_once_with(_SAMPLE_NPUB)
+        assert result["seed_applied"] is True
+        assert result["seed_balance_api_sats"] == 100
+
+    @pytest.mark.asyncio
+    async def test_seed_balance_idempotent_on_repeat_receive(self, vault_dir, operator_nsec):
+        """Repeat credential receive does NOT re-seed the balance."""
+        from excalibur_mcp.server import receive_credentials
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+            seed_balance_sats=100,
+        )
+
+        mock_result = {
+            "success": True,
+            "service": "x",
+            "fields_received": 2,
+            "sensitive_fields": 2,
+            "encryption": "vault",
+            "credentials": {
+                "access_token": "t",
+                "access_token_secret": "ts",
+            },
+            "message": "Credentials restored from vault.",
+        }
+
+        with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
+             _mock_user_id("user-repeat"), \
+             patch.object(srv, "_seed_balance", new_callable=AsyncMock, return_value=False):
+            exchange = srv._get_courier_exchange()
+            with patch.object(exchange, "receive", new_callable=AsyncMock, return_value=mock_result):
+                result = await receive_credentials(_SAMPLE_NPUB)
+
+        assert "seed_applied" not in result
+
+
 class TestForgetCredentials:
     @pytest.mark.asyncio
     async def test_forget_returns_result(self, vault_dir, operator_nsec):

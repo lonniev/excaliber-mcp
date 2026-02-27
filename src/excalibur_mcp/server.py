@@ -709,6 +709,13 @@ async def receive_credentials(sender_npub: str, service: str = "x") -> dict[str,
                     npub=sender_npub,
                 )
                 result["session_activated"] = True
+                result["dpyc_npub"] = sender_npub
+
+                # Seed starter balance (idempotent)
+                seed_applied = await _seed_balance(sender_npub)
+                if seed_applied:
+                    result["seed_applied"] = True
+                    result["seed_balance_api_sats"] = get_settings().seed_balance_sats
             else:
                 result["session_activated"] = False
                 result["warning"] = (
