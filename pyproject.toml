@@ -1,6 +1,6 @@
 [project]
 name = "excalibur-mcp"
-version = "0.5.0"
+version = "0.6.0"
 description = "FastMCP server for posting formatted content to X (Twitter) — Tollbooth-monetized, DPYC-native"
 authors = [{name = "eXcalibur MCP Contributors"}]
 readme = "README.md"
@@ -16,7 +16,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
-    "tollbooth-dpyc[nostr]>=0.1.40",
+    "tollbooth-dpyc[nostr]>=0.1.41",
 ]
 
 [project.optional-dependencies]

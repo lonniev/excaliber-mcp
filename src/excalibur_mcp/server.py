@@ -39,6 +39,7 @@ _DEFAULT_VAULT_DIR = os.path.join(os.path.expanduser("~"), ".excalibur", "vault"
 TOOL_COSTS: dict[str, int] = {
     # Free
     "health": ToolTier.FREE,
+    "service_status": ToolTier.FREE,
     "register_credentials": ToolTier.FREE,
     "activate_session": ToolTier.FREE,
     "session_status": ToolTier.FREE,
@@ -511,6 +512,76 @@ async def health() -> dict:
         "versions": versions,
         "status": "ok",
     }
+
+
+@mcp.tool()
+async def service_status() -> dict[str, Any]:
+    """Check BTCPay configuration, connectivity, courier status, and versions.
+
+    Operator diagnostic tool. Reports package versions, BTCPay connectivity,
+    courier readiness, and cache health. Free — no credits consumed.
+
+    Returns:
+        versions: Runtime package versions (excalibur_mcp, tollbooth_dpyc, etc.).
+        btcpay_host/btcpay_store_id: Configured endpoints.
+        server_reachable: True/False/None (None if not configured).
+        courier_status: Secure Courier readiness.
+        cache_health: Ledger cache metrics (if initialized).
+    """
+    import importlib.metadata as _meta
+
+    from excalibur_mcp import __version__
+    from tollbooth.config import TollboothConfig
+    from tollbooth.tools.credits import btcpay_status_tool
+
+    settings = get_settings()
+
+    btcpay_client = None
+    try:
+        btcpay_client = _get_btcpay()
+    except ValueError:
+        pass
+
+    config = TollboothConfig(
+        btcpay_host=settings.btcpay_host,
+        btcpay_store_id=settings.btcpay_store_id,
+        btcpay_api_key=settings.btcpay_api_key,
+        btcpay_tier_config=settings.btcpay_tier_config,
+        btcpay_user_tiers=settings.btcpay_user_tiers,
+        seed_balance_sats=settings.seed_balance_sats,
+        tollbooth_royalty_address=settings.tollbooth_royalty_address,
+        tollbooth_royalty_percent=settings.tollbooth_royalty_percent,
+        tollbooth_royalty_min_sats=settings.tollbooth_royalty_min_sats,
+        authority_npub=settings.dpyc_authority_npub,
+        credit_ttl_seconds=settings.credit_ttl_seconds,
+    )
+
+    result = await btcpay_status_tool(config, btcpay_client)
+
+    # Augment version provenance with host-layer package
+    versions = result.get("versions", {})
+    versions["excalibur_mcp"] = __version__
+    result["versions"] = versions
+
+    # Courier status
+    try:
+        courier = _get_courier_service()
+        result["courier_status"] = {
+            "enabled": courier.enabled,
+            "npub": courier.npub,
+            "relays": courier.relays,
+        }
+    except Exception as exc:
+        result["courier_status"] = {"enabled": False, "error": str(exc)}
+
+    # Cache health
+    try:
+        cache = _get_ledger_cache()
+        result["cache_health"] = cache.health()
+    except Exception:
+        result["cache_health"] = None
+
+    return result
 
 
 @mcp.tool()
