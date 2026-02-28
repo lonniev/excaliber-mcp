@@ -495,9 +495,20 @@ async def _seed_balance(npub: str) -> bool:
 @mcp.tool()
 async def health() -> dict:
     """Health check — returns service version and status. Free, no credits consumed."""
+    import importlib.metadata as _meta
+
+    from excalibur_mcp import __version__
+
+    versions: dict[str, str] = {"excalibur_mcp": __version__}
+    try:
+        versions["tollbooth_dpyc"] = _meta.version("tollbooth-dpyc")
+    except _meta.PackageNotFoundError:
+        versions["tollbooth_dpyc"] = "unknown"
+
     return {
         "service": "excalibur-mcp",
-        "version": "0.4.0",
+        "version": __version__,
+        "versions": versions,
         "status": "ok",
     }
 
