@@ -25,8 +25,7 @@ _ONBOARDING_NEXT_STEPS = {
     "step_1": "Ask the user for their Nostr npub (public key). They can get one from the dpyc-oracle's how_to_join() tool.",
     "step_2": "Call request_credential_channel(recipient_npub=<npub>) to send a welcome DM to the user's Nostr client.",
     "step_3": "Tell the user to open their Nostr client (Primal, Damus, etc.) and reply to the welcome DM with their X API credentials in the JSON format shown. Credentials must NEVER appear in this chat.",
-    "step_4": "Once the user confirms they replied, call receive_credentials(sender_npub=<npub>) to vault the credentials.",
-    "step_5": "Call activate_session(passphrase=<user's chosen passphrase>) to start the session.",
+    "step_4": "Once the user confirms they replied, call receive_credentials(sender_npub=<npub>, passphrase=<passphrase>) to vault the credentials for future sessions.",
 }
 
 # Default vault directory (operator can override via EXCALIBUR_VAULT_DIR)
@@ -124,7 +123,7 @@ def _get_effective_user_id() -> str:
             "Call activate_session (returning user) or follow the Secure Courier "
             "onboarding flow: ask the user for their npub, call "
             "request_credential_channel(recipient_npub=<npub>), wait for them to "
-            "reply via Nostr DM, then call receive_credentials(sender_npub=<npub>). "
+            "reply via Nostr DM, then call receive_credentials(sender_npub=<npub>, passphrase=<passphrase>). "
             "Credentials must NEVER appear in this chat."
         )
     return npub
@@ -747,6 +746,11 @@ async def activate_session(passphrase: str) -> dict[str, Any]:
         result: dict[str, Any] = {"success": False, "error": str(e)}
         if isinstance(e, CredentialNotFoundError):
             result["next_steps"] = _ONBOARDING_NEXT_STEPS
+            result["hint"] = (
+                "If you already completed the Secure Courier flow, you may not "
+                "have included a passphrase. Re-run receive_credentials(sender_npub=<npub>, "
+                "passphrase=<passphrase>) to store credentials in the passphrase vault."
+            )
         return result
 
     npub = creds.get("npub")
@@ -822,7 +826,11 @@ async def request_credential_channel(
 
 
 @mcp.tool()
-async def receive_credentials(sender_npub: str, service: str = "x") -> dict[str, Any]:
+async def receive_credentials(
+    sender_npub: str,
+    service: str = "x",
+    passphrase: str | None = None,
+) -> dict[str, Any]:
     """Pick up credentials delivered via the Secure Courier.
 
     If you've previously delivered credentials for this service, they'll
@@ -835,10 +843,16 @@ async def receive_credentials(sender_npub: str, service: str = "x") -> dict[str,
     Credential values are NEVER echoed back — only the field count and
     service name are returned.
 
+    If a passphrase is provided, credentials are also stored in the
+    passphrase vault so that future sessions can be activated with
+    activate_session(passphrase) instead of repeating the Courier flow.
+
     Args:
         sender_npub: Your Nostr public key (npub1...) — the one you
             sent the DM from.
         service: Which credential template to match (default "x").
+        passphrase: Optional passphrase to store credentials in the
+            passphrase vault for future activate_session() calls.
     """
     try:
         courier = _get_courier_service()
@@ -846,9 +860,40 @@ async def receive_credentials(sender_npub: str, service: str = "x") -> dict[str,
         return {"success": False, "error": str(e)}
 
     try:
-        return await courier.receive(sender_npub, service=service)
+        result = await courier.receive(sender_npub, service=service)
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+    # Bridge to passphrase vault for future activate_session() calls
+    if passphrase and result.get("success"):
+        try:
+            from excalibur_mcp.vault import encrypt_credentials, get_session
+
+            user_id = _require_user_id()
+            session = get_session(user_id)
+            if session:
+                blob = encrypt_credentials(
+                    session.x_api_key,
+                    session.x_api_secret,
+                    session.x_access_token,
+                    session.x_access_token_secret,
+                    passphrase,
+                    npub=session.npub,
+                )
+                vault = _get_vault()
+                await vault.store(user_id, blob)
+                result["vault_stored"] = True
+                result["message"] = (
+                    result.get("message", "")
+                    + " Credentials also stored in passphrase vault"
+                    " — use activate_session(passphrase) in future sessions."
+                )
+        except Exception as e:
+            result["vault_warning"] = (
+                f"Courier succeeded but vault storage failed: {e}"
+            )
+
+    return result
 
 
 @mcp.tool()

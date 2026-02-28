@@ -319,6 +319,126 @@ class TestReceiveCredentials:
         assert "seed_applied" not in result
 
 
+class TestReceiveCredentialsPassphraseBridge:
+    """Tests for the optional passphrase parameter on receive_credentials."""
+
+    def _exchange_result(self):
+        return {
+            "success": True,
+            "service": "x",
+            "fields_received": 2,
+            "sensitive_fields": 2,
+            "encryption": "vault",
+            "credentials": {
+                "access_token": "t",
+                "access_token_secret": "ts",
+            },
+            "message": "Credentials restored from vault.",
+        }
+
+    @pytest.mark.asyncio
+    async def test_passphrase_stores_in_file_vault(self, vault_dir, operator_nsec):
+        """When passphrase is provided, credentials are stored in FileVault."""
+        from excalibur_mcp.server import receive_credentials
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+        )
+
+        with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
+             _mock_user_id("user-bridge"):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=self._exchange_result()):
+                result = await receive_credentials(_SAMPLE_NPUB, passphrase="Open Sesame")
+
+        assert result["success"] is True
+        assert result["vault_stored"] is True
+        assert "passphrase vault" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_passphrase_enables_activate_session(self, vault_dir, operator_nsec):
+        """After receive_credentials with passphrase, activate_session works."""
+        from excalibur_mcp.server import receive_credentials, activate_session
+        from excalibur_mcp.vault import get_session
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+        )
+
+        # Step 1: receive with passphrase
+        with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
+             _mock_user_id("user-bridge"):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=self._exchange_result()):
+                await receive_credentials(_SAMPLE_NPUB, passphrase="Open Sesame")
+
+        # Step 2: clear in-memory session (simulates new process)
+        clear_session("user-bridge")
+        assert get_session("user-bridge") is None
+
+        # Step 3: activate_session with same passphrase
+        with _mock_user_id("user-bridge"):
+            result = await activate_session(passphrase="Open Sesame")
+
+        assert result["success"] is True
+        assert result["dpyc_npub"] == _SAMPLE_NPUB
+
+        session = get_session("user-bridge")
+        assert session is not None
+        assert session.x_api_key == "op-key"
+        assert session.x_access_token == "t"
+
+    @pytest.mark.asyncio
+    async def test_no_passphrase_skips_vault_store(self, vault_dir, operator_nsec):
+        """Without passphrase, no FileVault write occurs."""
+        from excalibur_mcp.server import receive_credentials
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+        )
+
+        with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
+             _mock_user_id("user-nopass"):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=self._exchange_result()):
+                result = await receive_credentials(_SAMPLE_NPUB)
+
+        assert result["success"] is True
+        assert "vault_stored" not in result
+
+    @pytest.mark.asyncio
+    async def test_vault_failure_warns_but_succeeds(self, vault_dir, operator_nsec):
+        """If vault storage fails, courier result still succeeds with a warning."""
+        from excalibur_mcp.server import receive_credentials
+        import excalibur_mcp.server as srv
+
+        settings = _mock_settings(
+            tollbooth_nostr_operator_nsec=operator_nsec,
+            excalibur_vault_dir=vault_dir,
+        )
+
+        with patch.object(srv, "get_settings", return_value=settings), \
+             patch.dict(os.environ, {"X_API_KEY": "op-key", "X_API_SECRET": "op-secret"}), \
+             _mock_user_id("user-fail"):
+            courier = srv._get_courier_service()
+            with patch.object(courier.exchange, "receive", new_callable=AsyncMock, return_value=self._exchange_result()), \
+                 patch.object(srv, "_get_vault", side_effect=Exception("vault boom")):
+                result = await receive_credentials(_SAMPLE_NPUB, passphrase="secret")
+
+        assert result["success"] is True
+        assert "vault_warning" in result
+        assert "vault boom" in result["vault_warning"]
+
+
 class TestForgetCredentials:
     @pytest.mark.asyncio
     async def test_forget_returns_result(self, vault_dir, operator_nsec):
