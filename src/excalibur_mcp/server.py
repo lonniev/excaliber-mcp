@@ -820,7 +820,15 @@ async def request_credential_channel(
         return {"success": False, "error": str(e)}
 
     try:
-        return await courier.open_channel(service, recipient_npub=recipient_npub)
+        return await courier.open_channel(
+            service,
+            greeting=(
+                "Hi — I'm eXcalibur, a Tollbooth MCP service for posting "
+                "formatted content to X. You (or your AI agent) requested a "
+                "credential channel."
+            ),
+            recipient_npub=recipient_npub,
+        )
     except Exception as e:
         return {"success": False, "error": str(e)}
 
