@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     tollbooth_royalty_percent: float = 0.02
     tollbooth_royalty_min_sats: int = 10
 
-    # DPYC Nostr identity
-    dpyc_operator_npub: str | None = None
-    dpyc_authority_npub: str | None = None
+    # DPYC registry resolution (replaces dpyc_operator_npub / dpyc_authority_npub env vars)
+    dpyc_registry_url: str = "https://raw.githubusercontent.com/lonniev/dpyc-community/main/members.json"
+    dpyc_registry_cache_ttl_seconds: int = 300
 
     # Credit expiration
     credit_ttl_seconds: int | None = 604800  # 7 days
